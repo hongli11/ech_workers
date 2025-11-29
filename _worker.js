@@ -1,7 +1,7 @@
 import { connect } from 'cloudflare:sockets';
 
 const CF_FALLBACK_IPS = ['tw.william.us.ci'];
-const TOKEN = 'abcd1234';
+const TOKEN = 'xxx';
 const encoder = new TextEncoder();
 
 export default {
