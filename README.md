@@ -6,7 +6,7 @@ ech-win -f cf绑定域名:443 -pyip 211.48.77.114:12312 -token xxx -ip 104.16.0.
 
 Usage of ech-win:
   -dns string
-        ECH 查询 DNS 服务器 (default "119.29.29.29:53")
+        ECH 查询 DoH 服务器 (default "dns.alidns.com/dns-query")
   -ech string
         ECH 查询域名 (default "cloudflare-ech.com")
   -f string
