@@ -32,6 +32,7 @@ var (
 	token      string
 	dnsServer  string
 	echDomain  string
+	proxyIP    string // 新增：代理服务器 IP
 
 	echListMu sync.RWMutex
 	echList   []byte
