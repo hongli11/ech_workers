@@ -246,19 +246,29 @@ func parseHTTPSRecord(data []byte) string {
 		return ""
 	}
 	offset := 2
-	if offset < len(data) && data[offset] == 0 {
+	if offset >= len(data) {
+		return ""
+	}
+	if data[offset] == 0 {
 		offset++
 	} else {
 		for offset < len(data) && data[offset] != 0 {
-			offset += int(data[offset]) + 1
+			step := int(data[offset]) + 1
+			if step <= 0 || offset+step > len(data) {
+				return ""
+			}
+			offset += step
 		}
 		offset++
 	}
 	for offset+4 <= len(data) {
+		if offset+4 > len(data) {
+			return ""
+		}
 		key := binary.BigEndian.Uint16(data[offset : offset+2])
 		length := binary.BigEndian.Uint16(data[offset+2 : offset+4])
 		offset += 4
-		if offset+int(length) > len(data) {
+		if length == 0 || offset+int(length) > len(data) {
 			break
 		}
 		value := data[offset : offset+int(length)]
@@ -341,18 +351,24 @@ func queryDoHForProxy(dnsQuery []byte) ([]byte, error) {
 // ======================== WebSocket 客户端 ========================
 
 func parseServerAddr(addr string) (host, port, path string, err error) {
+	if addr == "" {
+		return "", "", "", errors.New("服务器地址为空")
+	}
 	path = "/"
 	slashIdx := strings.Index(addr, "/")
 	if slashIdx != -1 {
-		path = addr[slashIdx:]
+		if slashIdx < len(addr) {
+			path = addr[slashIdx:]
+		}
 		addr = addr[:slashIdx]
 	}
-
+	if addr == "" {
+		return "", "", "", errors.New("服务器地址格式错误")
+	}
 	host, port, err = net.SplitHostPort(addr)
-	if err != nil {
+	if err != nil || host == "" || port == "" {
 		return "", "", "", fmt.Errorf("无效的服务器地址格式: %v", err)
 	}
-
 	return host, port, path, nil
 }
 
@@ -454,7 +470,14 @@ func runProxyServer(addr string) {
 }
 
 func handleConnection(conn net.Conn) {
-	defer conn.Close()
+	if conn == nil {
+		return
+	}
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
 
 	clientAddr := conn.RemoteAddr().String()
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
@@ -484,6 +507,10 @@ func handleConnection(conn net.Conn) {
 // ======================== SOCKS5 处理 ========================
 
 func handleSOCKS5(conn net.Conn, clientAddr string, firstByte byte) {
+	if conn == nil {
+		return
+	}
+
 	// 验证版本
 	if firstByte != 0x05 {
 		log.Printf("[SOCKS5] %s 版本错误: 0x%02x", clientAddr, firstByte)
@@ -570,7 +597,7 @@ func handleSOCKS5(conn net.Conn, clientAddr string, firstByte byte) {
 
 		log.Printf("[SOCKS5] %s -> %s", clientAddr, target)
 
-		if err := handleTunnel(conn, target, clientAddr, modeSOCKS5, ""); err != nil {
+		if err := handleTunnel(conn, target, clientAddr, modeSOCKS5, nil); err != nil {
 			if !isNormalCloseError(err) {
 				log.Printf("[SOCKS5] %s 代理失败: %v", clientAddr, err)
 			}
@@ -586,6 +613,10 @@ func handleSOCKS5(conn net.Conn, clientAddr string, firstByte byte) {
 }
 
 func handleUDPAssociate(tcpConn net.Conn, clientAddr string) {
+	if tcpConn == nil {
+		return
+	}
+
 	// 创建 UDP 监听器
 	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
 	if err != nil {
@@ -619,18 +650,22 @@ func handleUDPAssociate(tcpConn net.Conn, clientAddr string) {
 
 	// 启动 UDP 处理
 	stopChan := make(chan struct{})
-	go handleUDPRelay(udpConn, clientAddr, stopChan)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go handleUDPRelay(udpConn, clientAddr, stopChan, &wg)
 
 	// 保持 TCP 连接，直到客户端关闭
 	buf := make([]byte, 1)
 	tcpConn.Read(buf)
 
 	close(stopChan)
+	wg.Wait() // 等待 goroutine 回收
 	udpConn.Close()
 	log.Printf("[UDP] %s UDP ASSOCIATE 连接关闭", clientAddr)
 }
 
-func handleUDPRelay(udpConn *net.UDPConn, clientAddr string, stopChan chan struct{}) {
+func handleUDPRelay(udpConn *net.UDPConn, clientAddr string, stopChan chan struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
 	buf := make([]byte, 65535)
 	for {
 		select {
@@ -744,6 +779,10 @@ func handleDNSQuery(udpConn *net.UDPConn, clientAddr *net.UDPAddr, dnsQuery []by
 // ======================== HTTP 处理 ========================
 
 func handleHTTP(conn net.Conn, clientAddr string, firstByte byte) {
+	if conn == nil {
+		return
+	}
+
 	// 将第一个字节放回缓冲区
 	reader := bufio.NewReader(io.MultiReader(
 		strings.NewReader(string(firstByte)),
@@ -789,7 +828,7 @@ func handleHTTP(conn net.Conn, clientAddr string, firstByte byte) {
 	case "CONNECT":
 		// HTTPS 隧道代理 - 需要发送 200 响应
 		log.Printf("[HTTP-CONNECT] %s -> %s", clientAddr, requestURL)
-		if err := handleTunnel(conn, requestURL, clientAddr, modeHTTPConnect, ""); err != nil {
+		if err := handleTunnel(conn, requestURL, clientAddr, modeHTTPConnect, nil); err != nil {
 			if !isNormalCloseError(err) {
 				log.Printf("[HTTP-CONNECT] %s 代理失败: %v", clientAddr, err)
 			}
@@ -859,7 +898,7 @@ func handleHTTP(conn net.Conn, clientAddr string, firstByte byte) {
 		firstFrame := requestBuilder.String()
 
 		// 使用 modeHTTPProxy 模式（不发送 200 响应）
-		if err := handleTunnel(conn, target, clientAddr, modeHTTPProxy, firstFrame); err != nil {
+		if err := handleTunnel(conn, target, clientAddr, modeHTTPProxy, []byte(firstFrame)); err != nil {
 			if !isNormalCloseError(err) {
 				log.Printf("[HTTP-%s] %s 代理失败: %v", method, clientAddr, err)
 			}
@@ -880,13 +919,20 @@ const (
 	modeHTTPProxy   = 3 // HTTP 普通代理（GET/POST等）
 )
 
-func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame string) error {
+func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame []byte) error {
+	if conn == nil {
+		return errors.New("连接对象为空")
+	}
 	wsConn, err := dialWebSocketWithECH(2)
 	if err != nil {
 		sendErrorResponse(conn, mode)
 		return err
 	}
-	defer wsConn.Close()
+	defer func() {
+		if wsConn != nil {
+			wsConn.Close()
+		}
+	}()
 
 	var mu sync.Mutex
 
@@ -911,24 +957,32 @@ func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame
 	conn.SetDeadline(time.Time{})
 
 	// 如果没有预设的 firstFrame，尝试读取第一帧数据（仅 SOCKS5）
-	if firstFrame == "" && mode == modeSOCKS5 {
+	if firstFrame == nil && mode == modeSOCKS5 {
 		_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-		buffer := make([]byte, 32768)
+		buffer := make([]byte, 32*1024) // 限制最大读取 32KB
 		n, _ := conn.Read(buffer)
 		_ = conn.SetReadDeadline(time.Time{})
-		if n > 0 {
-			firstFrame = string(buffer[:n])
+		if n > 0 && n <= 32*1024 {
+			firstFrame = buffer[:n]
+		} else if n > 32*1024 {
+			firstFrame = buffer[:32*1024]
+		} else {
+			firstFrame = nil
 		}
 	}
 
 	// 构建连接消息，包含代理 IP 信息
-	connectMsg := fmt.Sprintf("CONNECT:%s|%s", target, firstFrame)
+	var connectMsg []byte
 	if proxyIP != "" {
-		connectMsg = fmt.Sprintf("CONNECT:%s|%s|%s", target, firstFrame, proxyIP)
+		// CONNECT:目标|首帧|代理IP
+		connectMsg = append([]byte(fmt.Sprintf("CONNECT:%s|", target)), firstFrame...)
+		connectMsg = append(connectMsg, []byte(fmt.Sprintf("|%s", proxyIP))...)
+	} else {
+		connectMsg = append([]byte(fmt.Sprintf("CONNECT:%s|", target)), firstFrame...)
 	}
 
 	mu.Lock()
-	err = wsConn.WriteMessage(websocket.TextMessage, []byte(connectMsg))
+	err = wsConn.WriteMessage(websocket.TextMessage, connectMsg)
 	mu.Unlock()
 	if err != nil {
 		sendErrorResponse(conn, mode)
@@ -960,7 +1014,11 @@ func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame
 	log.Printf("[代理] %s 已连接: %s", clientAddr, target)
 
 	// 双向转发
-	done := make(chan bool, 2)
+	done := make(chan struct{})
+	var once sync.Once
+	closeDone := func() {
+		once.Do(func() { close(done) })
+	}
 
 	// Client -> Server
 	go func() {
@@ -971,7 +1029,7 @@ func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame
 				mu.Lock()
 				wsConn.WriteMessage(websocket.TextMessage, []byte("CLOSE"))
 				mu.Unlock()
-				done <- true
+				closeDone()
 				return
 			}
 
@@ -979,7 +1037,7 @@ func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame
 			err = wsConn.WriteMessage(websocket.BinaryMessage, buf[:n])
 			mu.Unlock()
 			if err != nil {
-				done <- true
+				closeDone()
 				return
 			}
 		}
@@ -990,19 +1048,19 @@ func handleTunnel(conn net.Conn, target, clientAddr string, mode int, firstFrame
 		for {
 			mt, msg, err := wsConn.ReadMessage()
 			if err != nil {
-				done <- true
+				closeDone()
 				return
 			}
 
 			if mt == websocket.TextMessage {
 				if string(msg) == "CLOSE" {
-					done <- true
+					closeDone()
 					return
 				}
 			}
 
 			if _, err := conn.Write(msg); err != nil {
-				done <- true
+				closeDone()
 				return
 			}
 		}
