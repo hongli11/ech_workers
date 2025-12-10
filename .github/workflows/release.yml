@@ -1,0 +1,63 @@
+name: Release All Platforms
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v1.0.0)"
+        required: true
+
+jobs:
+  build:
+    name: Build for all platforms
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-amd64
+          - os: macos-latest
+            target: macos-amd64
+          - os: macos-latest
+            target: macos-arm64
+          - os: windows-latest
+            target: windows-amd64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build binary
+        run: |
+          echo "Build for ${{ matrix.target }}"
+          # 示例：根据实际构建方式修改
+          # 下面只是一个演示例子
+          mkdir -p dist
+          echo "fake binary for ${{ matrix.target }}" > dist/myapp-${{ matrix.target }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    name: Create Release and Upload Files
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: Release ${{ github.event.inputs.version }}
+          files: ./artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
