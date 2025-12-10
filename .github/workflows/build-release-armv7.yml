@@ -1,42 +1,45 @@
-name: Build and Release ARMv7
+name: build-and-release
 
 on:
   push:
     tags:
-      - 'v*.*.*'  # 只在打 tag 时触发
+      - 'v*.*.*'  # 当推送符合 v1.0.0 格式的 tag 时触发
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag for the release'
+        required: true
+        default: 'v0.0.1'
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: 1.21
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          cache: true
 
-    - name: Install Dependencies
-      run: sudo apt-get update && sudo apt-get install -y git tar
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y git tar
 
-    - name: Build ARMv7 Binary
-      env:
-        GOOS: linux
-        GOARCH: arm
-        GOARM: 7
-      run: |
-        echo "Building ech-workers for ARMv7..."
-        cd "$GITHUB_WORKSPACE"
-        ls -lh ./ech-workers.go || (echo "ech-workers.go not found at $GITHUB_WORKSPACE" && exit 1)
-        go build -o "$GITHUB_WORKSPACE/ech-workers-armv7" ./ech-workers.go
-        ls -lh "$GITHUB_WORKSPACE/ech-workers-armv7"
+      - name: Build ech-workers for ARMv7
+        run: |
+          echo "Building ech-workers for ARMv7..."
+          cd "$GITHUB_WORKSPACE"
+          go build -o "$GITHUB_WORKSPACE/ech-workers-armv7" ./ech-workers.go
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: ech-workers-armv7
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ech-workers-armv7
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
