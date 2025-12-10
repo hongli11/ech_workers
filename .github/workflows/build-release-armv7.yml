@@ -1,60 +1,48 @@
-name: build-and-release
+name: Build and Release ARMv7
 
 on:
   push:
     tags:
-      - 'v*.*.*'  # 当推送符合 v1.0.0 格式的 tag 时触发
-  workflow_dispatch:
+      - 'v*'  # 只在你 push 到以 v 开头的 tag 时触发
+  workflow_dispatch:  # 手动触发
     inputs:
       tag_name:
-        description: 'Tag for the release (optional)'
-        required: false
+        description: 'Tag Name'
+        required: true
+        default: 'v1.0.0'
 
 jobs:
-  build-and-release:
-    runs-on: ubuntu-24.04
-
+  build:
+    runs-on: ubuntu-latest
     steps:
+      # Checkout the code
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v2
+
+      # Set up Rust
+      - name: Set up Rust
+        uses: actions/setup-rust@v1
         with:
-          fetch-depth: 0
+          rust-version: 1.60.0
 
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.21'
-          cache: true
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y git tar
-
-      - name: Build ech-workers for ARMv7
+      # Build the project
+      - name: Build the project
         run: |
-          echo "Building ech-workers for ARMv7..."
-          cd "$GITHUB_WORKSPACE"
-          go build -o "$GITHUB_WORKSPACE/ech-workers-armv7" ./ech-workers.go
-
-      - name: Determine release tag
-        id: tag
-        run: |
-          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
-            echo "Using input tag: ${{ github.event.inputs.tag_name }}"
-            echo "TAG=${{ github.event.inputs.tag_name }}" >> $GITHUB_ENV
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG=${GITHUB_REF#refs/tags/}
-            echo "Using pushed tag: $TAG"
-            echo "TAG=$TAG" >> $GITHUB_ENV
-          else
-            TAG="temp-$(date +%Y%m%d%H%M%S)"
-            echo "No tag specified, using temporary tag: $TAG"
-            echo "TAG=$TAG" >> $GITHUB_ENV
-          fi
-
-      - name: Create GitHub Release
+          cargo build --release --target=armv7-unknown-linux-gnueabihf
+          
+      # Create a release and upload the binary
+      - name: Create Release and Upload Binary
         uses: softprops/action-gh-release@v1
         with:
-          files: ech-workers-armv7
-          tag_name: ${{ env.TAG }}
+          files: ./target/armv7-unknown-linux-gnueabihf/release/ech-workers-armv7
+
+      # Optional: Deploy to a server via SCP (uncomment if needed)
+      - name: Upload to server
+        if: success()  # Only run if build succeeds
+        run: |
+          echo "Uploading to server..."
+          scp ./target/armv7-unknown-linux-gnueabihf/release/ech-workers-armv7 user@yourserver:/path/to/deploy/
+          ssh user@yourserver "chmod +x /path/to/deploy/ech-workers-armv7 && /path/to/deploy/ech-workers-armv7"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
