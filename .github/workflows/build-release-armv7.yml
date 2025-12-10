@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag for the release'
-        required: true
-        default: 'v0.0.1'
+        description: 'Tag for the release (optional)'
+        required: false
 
 jobs:
   build-and-release:
@@ -36,10 +35,26 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           go build -o "$GITHUB_WORKSPACE/ech-workers-armv7" ./ech-workers.go
 
+      - name: Determine release tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            echo "Using input tag: ${{ github.event.inputs.tag_name }}"
+            echo "TAG=${{ github.event.inputs.tag_name }}" >> $GITHUB_ENV
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            echo "Using pushed tag: $TAG"
+            echo "TAG=$TAG" >> $GITHUB_ENV
+          else
+            TAG="temp-$(date +%Y%m%d%H%M%S)"
+            echo "No tag specified, using temporary tag: $TAG"
+            echo "TAG=$TAG" >> $GITHUB_ENV
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: ech-workers-armv7
-          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          tag_name: ${{ env.TAG }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
