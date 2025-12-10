@@ -2,5 +2,35 @@ name: Build ARMv7
 
 on:
   push:
+    branches:
+      - main
     tags:
-     
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Build ech-workers for ARMv7
+        run: |
+          echo "Building ech-workers for ARMv7..."
+          export GOOS=linux
+          export GOARCH=arm
+          export GOARM=7
+          go build -o ech-workers-armv7 -v ./main.go
+          ls -lh ech-workers-armv7
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ech-workers-armv7
+          path: ech-workers-armv7
