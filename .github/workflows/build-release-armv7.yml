@@ -1,13 +1,13 @@
-name: Build and Release ARMv7
+name: Build and Release for ARMv7 (Go)
 
 on:
   push:
     tags:
-      - 'v*'  # 只在你 push 到以 v 开头的 tag 时触发
-  workflow_dispatch:  # 手动触发
+      - 'v*'
+  workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag Name'
+        description: 'Tag Name for Release'
         required: true
         default: 'v1.0.0'
 
@@ -15,34 +15,37 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # Checkout the code
+      # 1. 检出代码
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      # Set up Rust
-      - name: Set up Rust
-        uses: actions/setup-rust@v1
+      # 2. 设置 Go 环境 (关键步骤)
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          rust-version: 1.60.0
+          go-version: '1.21' # 建议使用项目要求的Go版本，或较新的稳定版
+          cache: true
 
-      # Build the project
-      - name: Build the project
+      # 3. 为 Linux ARMv7 进行交叉编译 (关键步骤)
+      - name: Build for Linux ARMv7
         run: |
-          cargo build --release --target=armv7-unknown-linux-gnueabihf
-          
-      # Create a release and upload the binary
-      - name: Create Release and Upload Binary
+          # 设置编译目标和输出文件名
+          export GOOS=linux
+          export GOARCH=arm
+          export GOARM=7 # 这对应你的 armv7l
+          # 编译，可自行定义输出文件名
+          go build -o ech-workers-armv7 -v ./main.go # 请将 ./main.go 替换为项目实际的入口文件路径
+
+      # 4. 验证生成的文件
+      - name: Verify Binary
+        run: |
+          file ech-workers-armv7
+          ls -lh ech-workers-armv7
+
+      # 5. 创建 GitHub Release 并上传构建成果
+      - name: Create Release and Upload
         uses: softprops/action-gh-release@v1
         with:
-          files: ./target/armv7-unknown-linux-gnueabihf/release/ech-workers-armv7
-
-      # Optional: Deploy to a server via SCP (uncomment if needed)
-      - name: Upload to server
-        if: success()  # Only run if build succeeds
-        run: |
-          echo "Uploading to server..."
-          scp ./target/armv7-unknown-linux-gnueabihf/release/ech-workers-armv7 user@yourserver:/path/to/deploy/
-          ssh user@yourserver "chmod +x /path/to/deploy/ech-workers-armv7 && /path/to/deploy/ech-workers-armv7"
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          files: |
+            ech-workers-armv7
+            README.md # 可选，可以包含其他文件
