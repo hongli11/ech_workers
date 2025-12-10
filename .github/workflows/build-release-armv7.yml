@@ -28,7 +28,9 @@ jobs:
         export GOOS=linux
         export GOARCH=arm
         export GOARM=7
-        go build -o ech-workers-armv7 main.go
+        cd ech_workers        # 切换到源码目录
+        go build -o ../ech-workers-armv7 ./main.go
+        cd ..
         ls -lh ech-workers-armv7
 
     - name: Package binary
