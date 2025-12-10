@@ -1,9 +1,9 @@
-name: Build & Release ech-workers ARMv7
+name: Build and Release ARMv7
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*.*.*'  # 只在打 tag 时触发
   workflow_dispatch:
 
 jobs:
@@ -11,20 +11,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
+    - name: Checkout Repository
       uses: actions/checkout@v4
-
-    - name: Show workspace (debug)
-      run: |
-        echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-        ls -la $GITHUB_WORKSPACE
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: 1.21
 
-    - name: Install dependencies
+    - name: Install Dependencies
       run: sudo apt-get update && sudo apt-get install -y git tar
 
     - name: Build ARMv7 Binary
@@ -34,31 +29,14 @@ jobs:
         GOARM: 7
       run: |
         echo "Building ech-workers for ARMv7..."
-        # 确保当前工作目录为 repo 根
         cd "$GITHUB_WORKSPACE"
-        # 打印一下以确认 main.go 在此处
-        ls -lh ./main.go || (echo "main.go not found at $GITHUB_WORKSPACE" && exit 1)
-        # 交叉编译生成到 workspace 根
-        go build -o "$GITHUB_WORKSPACE/ech-workers-armv7" ./main.go
+        ls -lh ./ech-workers.go || (echo "ech-workers.go not found at $GITHUB_WORKSPACE" && exit 1)
+        go build -o "$GITHUB_WORKSPACE/ech-workers-armv7" ./ech-workers.go
         ls -lh "$GITHUB_WORKSPACE/ech-workers-armv7"
-
-    - name: Package binary
-      run: |
-        cd "$GITHUB_WORKSPACE"
-        TAR_NAME="ech-workers-linux-armv7.tar.gz"
-        tar czvf $TAR_NAME ech-workers-armv7
-        ls -lh $TAR_NAME
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: "armv7-$(date +%Y%m%d%H%M%S)"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: ech-workers-linux-armv7.tar.gz
+        files: ech-workers-armv7
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
