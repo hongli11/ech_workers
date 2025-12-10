@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <StartupObject>EchWorkersManager.Program</StartupObject>
+    <AssemblyName>EchWorkersManager</AssemblyName>
+    <RootNamespace>EchWorkersManager</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 将 ech-workers.exe 嵌入为资源 -->
+    <EmbeddedResource Include="ech-workers.exe" />
+    <!-- 将 app.ico 嵌入为资源 -->
+    <EmbeddedResource Include="app.ico" />
+  </ItemGroup>
+
+</Project>
