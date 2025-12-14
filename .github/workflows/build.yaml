@@ -1,66 +1,61 @@
-name: Release All Platforms
+name: Build ech_workers (All Platforms)
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release tag（例如 v1.5.0 或 nightly-20251129）'
-        required: true
-        type: string
-
-permissions:
-  contents: write
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  # Main release job for all platforms
-  release:
+  build:
+    name: build-${{ matrix.goos }}-${{ matrix.goarch }}
     runs-on: ubuntu-latest
-    steps:
 
-      - name: Free Disk Space (Ubuntu)
-        if: matrix.target-platform == ''
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        include:
+          - goos: linux
+            goarch: arm
+            goarm: 7
+
+    env:
+      CGO_ENABLED: 0
+      GOTOOLCHAIN: local
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.0'
-
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install dependencies
-        run: |
-          sudo snap install zig --classic --beta
-          docker pull crazymax/xgo:latest
-          go install github.com/crazy-max/xgo@latest
-          sudo apt install upx
+          go-version: "1.21"
 
       - name: Build
+        shell: bash
         run: |
-          bash build.sh release ${{ matrix.build-type == 'lite' && 'lite' || '' }} ${{ matrix.target-platform }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Upload assets
-        uses: softprops/action-gh-release@v2
+          mkdir -p dist
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          if [ "${{ matrix.goarch }}" = "arm" ]; then
+            export GOARM=${{ matrix.goarm }}
+          fi
+
+          BIN=ech_workers
+          if [ "$GOOS" = "windows" ]; then
+            BIN=ech_workers.exe
+          fi
+
+          echo "Building $GOOS/$GOARCH"
+          go build -trimpath -ldflags "-s -w" -o dist/${BIN} .
+
+          tar -czf dist/ech_workers-${GOOS}-${GOARCH}.tar.gz -C dist ${BIN}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: build/compress/*
-          prerelease: false
-          tag_name: ${{ inputs.version }}
-
-
-
-
+          name: ech_workers-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.tar.gz
